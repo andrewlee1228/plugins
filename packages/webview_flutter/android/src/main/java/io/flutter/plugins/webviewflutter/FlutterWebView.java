@@ -32,6 +32,10 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.util.Log;
 import java.util.HashMap;
+import android.webkit.GeolocationPermissions;
+import android.webkit.ValueCallback;
+import android.net.Uri;
+import android.content.Intent;
 
 public class FlutterWebView implements PlatformView, MethodCallHandler {
   private static final String JS_CHANNEL_NAMES_FIELD = "javascriptChannelNames";
