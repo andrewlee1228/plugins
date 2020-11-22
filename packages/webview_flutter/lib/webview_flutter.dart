@@ -145,6 +145,16 @@ typedef void PageFinishedCallback(String url);
 /// Signature for when a [WebView] has failed to load a resource.
 typedef void WebResourceErrorCallback(WebResourceError error);
 
+/// Signature for when a page fire an Alert dialog by JavaScript.
+typedef Future<Null> JSAlertCallback(String url, String message);
+
+/// Signature for when a page fire an Confirm dialog by JavaScript.
+typedef Future<bool> JSConfirmCallback(String url, String message);
+
+/// Signature for when a page fire an Prompt dialog by JavaScript.
+typedef Future<String> JSPromptCallback(
+    String url, String message, String defaultText);
+
 /// Specifies possible restrictions on automatic media playback.
 ///
 /// This is typically used in [WebView.initialMediaPlaybackPolicy].
@@ -218,6 +228,9 @@ class WebView extends StatefulWidget {
     this.onPageStarted,
     this.onPageFinished,
     this.onWebResourceError,
+    this.onJSAlert,
+    this.onJSConfirm,
+    this.onJSPrompt,
     this.debuggingEnabled = false,
     this.gestureNavigationEnabled = false,
     this.userAgent,
@@ -353,6 +366,24 @@ class WebView extends StatefulWidget {
   /// This can be called for any resource (iframe, image, etc.), not just for
   /// the main page.
   final WebResourceErrorCallback onWebResourceError;
+
+  /// Invoked when a page fire an Alert dialog by JavaScript.
+  ///
+  /// You have to implement your Alert dialog on your own way.
+  /// Default value will consumed dialog callback.
+  final JSAlertCallback onJSAlert;
+
+  /// Invoked when a page fire an Confirm dialog by JavaScript.
+  ///
+  /// You have to implement your Confirm dialog on your own way.
+  /// Default value will consumed dialog callback.
+  final JSConfirmCallback onJSConfirm;
+
+  /// Invoked when a page fire an Prompt dialog by JavaScript.
+  ///
+  /// You have to implement your Prompt dialog on your own way.
+  /// Default value will consumed dialog callback.
+  final JSPromptCallback onJSPrompt;
 
   /// Controls whether WebView debugging is enabled.
   ///
@@ -562,6 +593,30 @@ class _PlatformCallbacksHandler implements WebViewPlatformCallbacksHandler {
     if (_widget.onWebResourceError != null) {
       _widget.onWebResourceError(error);
     }
+  }
+
+  @override
+  Future<Null> onJSAlert(String url, String message) async {
+    if (_widget.onJSAlert != null) {
+      await _widget.onJSAlert(url, message);
+    }
+  }
+
+  @override
+  Future<bool> onJSConfirm(String url, String message) async {
+    if (_widget.onJSConfirm != null) {
+      return await _widget.onJSConfirm(url, message);
+    }
+    return false;
+  }
+
+  @override
+  Future<String> onJSPrompt(
+      String url, String message, String defaultText) async {
+    if (_widget.onJSPrompt != null) {
+      return await _widget.onJSPrompt(url, message, defaultText);
+    }
+    return '';
   }
 
   void _updateJavascriptChannelsFromSet(Set<JavascriptChannel> channels) {

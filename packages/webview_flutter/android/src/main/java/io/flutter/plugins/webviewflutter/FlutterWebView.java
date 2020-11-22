@@ -16,6 +16,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.JsPromptResult;
+import android.webkit.JsResult;
 import androidx.annotation.NonNull;
 import io.flutter.plugin.common.BinaryMessenger;
 import io.flutter.plugin.common.MethodCall;
@@ -26,6 +28,10 @@ import io.flutter.plugin.platform.PlatformView;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import android.app.Activity;
+import android.content.ClipData;
+import android.util.Log;
+import java.util.HashMap;
 
 public class FlutterWebView implements PlatformView, MethodCallHandler {
   private static final String JS_CHANNEL_NAMES_FIELD = "javascriptChannelNames";
@@ -33,6 +39,11 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
   private final MethodChannel methodChannel;
   private final FlutterWebViewClient flutterWebViewClient;
   private final Handler platformThreadHandler;
+  private Activity activity;
+  private Context context;
+  private ValueCallback<Uri> uploadMessage;
+  private ValueCallback<Uri[]> uploadMessageAboveL;
+  private final static int FILE_CHOOSER_RESULT_CODE = 10000;
 
   // Verifies that a url opened by `Window.open` has a secure url.
   private class FlutterWebChromeClient extends WebChromeClient {
@@ -97,7 +108,140 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
 
     // Multi windows is set with FlutterWebChromeClient by default to handle internal bug: b/159892679.
     webView.getSettings().setSupportMultipleWindows(true);
-    webView.setWebChromeClient(new FlutterWebChromeClient());
+    /**
+     * start
+     * input='file'
+     * */
+    webView.setWebChromeClient(new WebChromeClient(){
+      // For Android < 3.0
+      public void openFileChooser(ValueCallback<Uri> valueCallback) {
+        uploadMessage = valueCallback;
+        openImageChooserActivity();
+      }
+
+      // For Android  >= 3.0
+      public void openFileChooser(ValueCallback valueCallback, String acceptType) {
+        uploadMessage = valueCallback;
+        openImageChooserActivity();
+      }
+
+      //For Android  >= 4.1
+      public void openFileChooser(ValueCallback<Uri> valueCallback, String acceptType, String capture) {
+        uploadMessage = valueCallback;
+        openImageChooserActivity();
+      }
+
+      // For Android >= 5.0
+      @Override
+      public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+        uploadMessageAboveL = filePathCallback;
+        openImageChooserActivity();
+        return true;
+      }
+
+      public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
+        callback.invoke(origin, true, false);
+      }
+
+      @Override
+      public boolean onJsAlert(WebView view, String url, String message, final JsResult result) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("url", url);
+        args.put("message", message);
+        methodChannel.invokeMethod("onJsAlert", args, new MethodChannel.Result() {
+          @Override
+          public void success(Object o) {
+            if (result != null) {
+              result.confirm();
+            }
+          }
+
+          @Override
+          public void error(String errorCode, String errorMessage, Object errorDetails) {
+            System.out.println("error");
+          }
+
+          @Override
+          public void notImplemented() {
+            System.out.println("notImplemented");
+          }
+        });
+        return true;
+      }
+
+      @Override
+      public boolean onJsConfirm(WebView view, String url, String message, final JsResult result) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("url", url);
+        args.put("message", message);
+        methodChannel.invokeMethod("onJsConfirm", args, new MethodChannel.Result() {
+          @Override
+          public void success(Object o) {
+            if (o instanceof Boolean) {
+              boolean boolResult = (Boolean) o;
+              if (result != null) {
+                if (boolResult) {
+                  result.confirm();
+                } else {
+                  result.cancel();
+                }
+              }
+            }
+          }
+
+          @Override
+          public void error(String errorCode, String errorMessage, Object errorDetails) {
+            System.out.println("error");
+          }
+
+          @Override
+          public void notImplemented() {
+            System.out.println("notImplemented");
+          }
+        });
+        return true;
+      }
+
+      @Override
+      public boolean onJsPrompt(WebView view, String url, String message, String defaultValue, final JsPromptResult result) {
+        Map<String, Object> args = new HashMap<>();
+        args.put("url", url);
+        args.put("message", message);
+        args.put("defaultText", defaultValue);
+        methodChannel.invokeMethod("onJsPrompt", args, new MethodChannel.Result() {
+          @Override
+          public void success(Object o) {
+            if (o instanceof String) {
+              String str = (String) o;
+              if (result != null) {
+                if (!str.isEmpty()) {
+                  result.confirm(str);
+                } else {
+                  result.confirm("");
+                }
+              }
+            }
+          }
+
+          @Override
+          public void error(String errorCode, String errorMessage, Object errorDetails) {
+            System.out.println("error");
+          }
+
+          @Override
+          public void notImplemented() {
+            System.out.println("notImplemented");
+          }
+        });
+        return true;
+      }
+
+    });
+
+
+    /**
+     * end
+     * */
 
     methodChannel = new MethodChannel(messenger, "plugins.flutter.io/webview_" + id);
     methodChannel.setMethodCallHandler(this);
@@ -121,6 +265,64 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
       String url = (String) params.get("initialUrl");
       webView.loadUrl(url);
     }
+  }
+
+  private void openImageChooserActivity() {
+    Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+    i.addCategory(Intent.CATEGORY_OPENABLE);
+    i.setType("*/*");
+    if (WebViewFlutterPlugin.activity!=null){
+      WebViewFlutterPlugin.activity.startActivityForResult(Intent.createChooser(i, "파일 선택"), FILE_CHOOSER_RESULT_CODE);
+    }else {
+      Log.v("userlogin","activity is null");
+    }
+
+  }
+  public static final int RESULT_OK = -1;
+
+  public boolean activityResult(int requestCode, int resultCode, Intent data) {
+    Log.v("userlogin","onActivityResult");
+    if (requestCode == FILE_CHOOSER_RESULT_CODE) {
+      if (null == uploadMessage && null == uploadMessageAboveL) {
+        return false;
+      }
+      Uri result = data == null || resultCode != RESULT_OK ? null : data.getData();
+      if (uploadMessageAboveL != null) {
+        onActivityResultAboveL(requestCode, resultCode, data);
+      } else if (uploadMessage != null) {
+        uploadMessage.onReceiveValue(result);
+        uploadMessage = null;
+      }
+    }
+    return false;
+  }
+
+  @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+  private void onActivityResultAboveL(int requestCode, int resultCode, Intent intent) {
+    if (requestCode != FILE_CHOOSER_RESULT_CODE || uploadMessageAboveL == null)
+    {
+      return;
+    }
+    Uri[] results = null;
+    if (resultCode == Activity.RESULT_OK) {
+      if (intent != null) {
+        String dataString = intent.getDataString();
+        ClipData clipData = intent.getClipData();
+        if (clipData != null) {
+          results = new Uri[clipData.getItemCount()];
+          for (int i = 0; i < clipData.getItemCount(); i++) {
+            ClipData.Item item = clipData.getItemAt(i);
+            results[i] = item.getUri();
+          }
+        }
+        if (dataString != null)
+        {
+          results = new Uri[]{Uri.parse(dataString)};
+        }
+      }
+    }
+    uploadMessageAboveL.onReceiveValue(results);
+    uploadMessageAboveL = null;
   }
 
   @Override
@@ -287,6 +489,10 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
         new android.webkit.ValueCallback<String>() {
           @Override
           public void onReceiveValue(String value) {
+            if (value.startsWith("\"") && value.endsWith("\"")) {
+              // Unwrap double quote (String type)
+              value = value.substring(1, value.length() - 1);
+            }
             result.success(value);
           }
         });
